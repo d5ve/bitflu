@@ -139,6 +139,10 @@ webgui_port               = 4081
 # Bitflus 'root directory'
 workdir                   = ./workdir
 
+# Support for ipfilter.dat files - needs Net::IPAddress::Filter::IPFilterDat
+# Filepath of filter list file.
+# ipfilter_dat_file         = ./ipfilter.dat 
+ipfilter_dat_file         =
 
 # Change uid/gid after startup (if started as root, needed for chroot)
 # runas_uid =
