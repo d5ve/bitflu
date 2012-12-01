@@ -2421,6 +2421,10 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
 			$self->debug("Won't connect to blacklisted IP $remote_ip");
 			return undef;
 		}
+		elsif($self->IpIsFiltered($remote_ip)) {
+			$self->debug("Won't connect to filtered IP $remote_ip");
+			$new_sock->close;
+		}
 		if(KILL_IPV4 && $self->IsNativeIPv4($remote_ip)) {
 			$self->debug("Will not connect to IPv4 addr $remote_ip");
 			return undef;
@@ -2480,6 +2484,10 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
 		}
 		elsif($self->IpIsBlacklisted($handle_id, $new_ip)) {
 			$self->debug("Refusing incoming connection from blacklisted ip $new_ip");
+			$new_sock->close;
+		}
+		elsif($self->IpIsFiltered($new_ip)) {
+			$self->debug("Refusing incoming connection from filtered ip $new_ip");
 			$new_sock->close;
 		}
 		elsif(KILL_IPV4 && $self->IsNativeIPv4($new_ip)) {
@@ -2657,6 +2665,20 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
 		}
 	}
 	
+    sub IpIsFiltered {
+		my($self, $this_ip) = @_;
+
+        return 0 unless $self->{ip_filter};
+
+        # Filter only supports IPv4
+        return 0 if $self->IsNativeIPv6($this_ip);
+
+        if ( !$self->IsNativeIPv4($this_ip) ) {
+            $this_ip = $self->SixToFour($this_ip);
+        }
+        return $self->{ip_filter}->in_filter($this_ip);
+    }
+
 	
 	sub debug { my($self, $msg) = @_; $self->{super}->debug("Network : ".$msg); }
 	sub info  { my($self, $msg) = @_; $self->{super}->info("Network : ".$msg);  }
