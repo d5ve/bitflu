@@ -1791,7 +1791,7 @@ use constant DNS_BLTTL    => 60;            # Purge any older DNS-Blacklist entr
 use constant MAGIC_DSNUM  => 1024*0.75;     # Don't ask me why, but 0.75 makes our downspeed guess much better
 use constant KILL_IPV4    => 0;             # 'simulate' non-working ipv4 stack
 
-use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q stats resolver_fail have_ipv6);
+use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q stats resolver_fail have_ipv6 ip_filter);
 
 	##########################################################################
 	# Creates a new Networking Object
@@ -1835,6 +1835,20 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
 			}
 		}
 		
+        # Check whether to use an ipfilter.dat IP address filter.
+        if($self->{super}->Configuration->GetValue('ipfilter_dat_file')) {
+            my $ipfilter_dat_file = $self->{super}->Configuration->GetValue('ipfilter_dat_file');
+            eval {
+                require Net::IPAddress::Filter::IPFilterDat;
+            };
+            if ($@) {
+                $self->stop("Net::IPAddress::Filter::IPFilterDat is required for ipfilter.dat support.");
+            }
+            if ( ! -f $ipfilter_dat_file ) {
+                $self->stop("Unable to find ipfilter.dat file at '$ipfilter_dat_file'");
+            }
+        }
+
 		if(KILL_IPV4) {
 			$self->warn("IPv4 support is *DISABLED*");
 		}
@@ -1843,7 +1857,7 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
 	}
 	
 	##########################################################################
-	# Register Admin commands
+	# Register Admin commands. Load any IP filter file.
 	sub init {
 		my($self) = @_;
 		$self->info("IPv6 support is ".($self->HaveIPv6 ? 'enabled' : 'not active'));
@@ -1853,6 +1867,16 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
 		$self->{super}->Admin->RegisterCommand('netstat',   $self, '_Command_Netstat',   'Display networking statistics');
 		$self->{super}->Admin->RegisterCommand('dig',       $self, '_Command_Dig',       'Resolve a hostname');
 		$self->{super}->CreateSxTask(Superclass=>$self,Callback=>'_UpdateNetstats', Interval=>NETSTATS, Args=>[]);
+
+        # Check whether to use an ipfilter.dat IP address filter.
+        if($self->{super}->Configuration->GetValue('ipfilter_dat_file')) {
+            my $ipfilter_dat_file = $self->{super}->Configuration->GetValue('ipfilter_dat_file');
+            $self->info("Loading ipfilter.dat file '$ipfilter_dat_file'");
+            $self->{ip_filter} = Net::IPAddress::Filter::IPFilterDat->new();
+            $self->{ip_filter}->load_file($ipfilter_dat_file);
+            $self->info("IP address filter initialized");
+        }
+
 		return 1;
 	}
 	
@@ -2423,7 +2447,7 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
 		}
 		elsif($self->IpIsFiltered($remote_ip)) {
 			$self->debug("Won't connect to filtered IP $remote_ip");
-			$new_sock->close;
+			return undef;
 		}
 		if(KILL_IPV4 && $self->IsNativeIPv4($remote_ip)) {
 			$self->debug("Will not connect to IPv4 addr $remote_ip");
@@ -2676,7 +2700,11 @@ use fields qw( super NOWTIME avfds bpx_dn bpx_up _HANDLES _SOCKETS stagger up_q 
         if ( !$self->IsNativeIPv4($this_ip) ) {
             $this_ip = $self->SixToFour($this_ip);
         }
-        return $self->{ip_filter}->in_filter($this_ip);
+        my $is_filtered = $self->{ip_filter}->in_filter($this_ip);
+
+        $self->debug("Filtering $this_ip") if $is_filtered;
+
+        return $is_filtered;
     }
 
 	
